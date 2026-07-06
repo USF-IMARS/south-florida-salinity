@@ -7,15 +7,23 @@ website:
     left:
       - href: index.qmd
         text: Home
-      - about.qmd
+        
+      - text: Downstream Flows
+        menu:
+        - riverflows/riverflowSouth.qmd
+        - riverflows/riverflowEast.qmd
+        - riverflows/riverflowWest.qmd
+        - riverflows/riverflowSoutheast.qmd
+        - riverflows/riverflowSouthwest.qmd
+        
+      - href: https://github.com/usf-imars/south-florida-salinity
+        text: Source Code on GitHub
 
 format:
   html:
-    theme:
-      - cosmo
-      - brand
+    theme: cosmo
     css: styles.css
     toc: true
-
-
-
+    code-fold: true
+    message: false
+    warning: false
