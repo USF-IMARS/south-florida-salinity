@@ -1,0 +1,159 @@
+---
+title: "NDBC Salinity Map"
+subtitle: "Most recent readings from Everglades National Park buoys via SECOORA ERDDAP"
+format: html
+execute:
+  echo: true
+  warning: false
+  message: false
+---
+
+```{r setup}
+library(dplyr)
+library(httr2)
+library(htmltools)
+library(knitr)
+library(leaflet)
+library(readr)
+library(scales)
+
+# Station list and parameters mirror ndbc_fetch_airflow_dag.py
+inwater_params <- c("sea_water_practical_salinity", "sea_water_temperature")
+
+ndbc_stations <- list(
+  list(name = "bkyf1", long_name = "Buoy_Key"),
+  list(name = "bnkf1", long_name = "Butternut_Kay"),
+  list(name = "bobf1", long_name = "Bob_Allen_Key"),
+  list(name = "bwsf1", long_name = "Blackwater_Sound"),
+  list(name = "dkkf1", long_name = "Duck_Key"),
+  list(name = "gbtf1", long_name = "Garfield_Bight"),
+  list(name = "hcef1", long_name = "Highway_Creek"),
+  list(name = "jbyf1", long_name = "Joe_Bay"),
+  list(name = "jkyf1", long_name = "Johnson_Key"),
+  list(name = "lbsf1", long_name = "Little_Blackwater_Sound"),
+  list(name = "lmdf1", long_name = "Little_Madeira_Bay"),
+  list(name = "lrkf1", long_name = "Little_Rabbit_Key"),
+  list(name = "lsnf1", long_name = "Long_Sound"),
+  list(name = "mdkf1", long_name = "Middle_Key"),
+  list(name = "mukf1", long_name = "Murray_Key"),
+  list(name = "pkyf1", long_name = "Peterson_Key"),
+  list(name = "tbyf1", long_name = "Terrapin_Bay"),
+  list(name = "thrf1", long_name = "Thursday_Point"),
+  list(name = "wrbf1", long_name = "Whipray_Basin")
+)
+
+# Match the DAG's 25-hour lookback window
+end_time <- format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
+start_time <- format(Sys.time() - 25 * 3600, "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
+
+fetch_latest_salinity <- function(station_info) {
+  param <- "sea_water_practical_salinity"
+  url <- sprintf(
+    "https://erddap.secoora.org/erddap/tabledap/gov-nps-ever-%s.csv?time%%2Clatitude%%2Clongitude%%2C%s&time%%3E=%s&time%%3C=%s",
+    station_info$name,
+    param,
+    start_time,
+    end_time
+  )
+
+  resp <- request(url) |>
+    req_perform()
+
+  df <- read_csv(resp_body_string(resp), show_col_types = FALSE)
+  names(df) <- c("time", "latitude", "longitude", "salinity")
+  df <- df[-1, ] |>
+    mutate(
+      time = as.POSIXct(time, format = "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"),
+      latitude = as.numeric(latitude),
+      longitude = as.numeric(longitude),
+      salinity = as.numeric(salinity)
+    ) |>
+    filter(!is.na(salinity))
+
+  if (nrow(df) == 0) {
+    return(NULL)
+  }
+
+  latest <- df[which.max(df$time), ]
+  tibble(
+    station_id = station_info$name,
+    station = station_info$long_name,
+    location = sprintf(
+      "%s (%s)",
+      station_info$long_name,
+      sub("f1$", "", station_info$name)
+    ),
+    time = latest$time,
+    latitude = latest$latitude,
+    longitude = latest$longitude,
+    salinity = latest$salinity
+  )
+}
+
+salinity_data <- bind_rows(lapply(ndbc_stations, fetch_latest_salinity))
+report_time <- format(Sys.time(), "%Y-%m-%d %H:%M %Z")
+```
+
+Data are pulled from [SECOORA ERDDAP](https://erddap.secoora.org/erddap/index.html) using the same URL pattern as `ndbc_fetch_airflow_dag.py`: a 25-hour window ending at render time, with the most recent non-missing salinity value kept for each station.
+
+**Report generated:** `r report_time`  
+**Query window:** `r start_time` to `r end_time`
+
+```{r summary}
+if (nrow(salinity_data) == 0) {
+  stop("No salinity data returned from ERDDAP for the current time window.")
+}
+
+salinity_data |>
+  arrange(desc(time)) |>
+  mutate(
+    time = format(time, "%Y-%m-%d %H:%M UTC"),
+    salinity = number(salinity, accuracy = 0.1)
+  ) |>
+  select(Station = station, `Station ID` = station_id, Time = time, `Salinity (PSU)` = salinity) |>
+  kable()
+```
+
+```{r map}
+#| fig-width: 10
+#| fig-height: 7
+
+salinity_palette <- colorNumeric(
+  palette = c("#2166ac", "#67a9cf", "#d1e5f0", "#fddbc7", "#ef8a62", "#b2182b"),
+  domain = salinity_data$salinity,
+  na.color = "#999999"
+)
+
+leaflet(salinity_data) |>
+  addProviderTiles("CartoDB.Positron") |>
+  setView(
+    lng = mean(salinity_data$longitude),
+    lat = mean(salinity_data$latitude),
+    zoom = 9
+  ) |>
+  addCircleMarkers(
+    lng = ~longitude,
+    lat = ~latitude,
+    radius = 8,
+    stroke = TRUE,
+    weight = 1,
+    color = "#333333",
+    fillColor = ~salinity_palette(salinity),
+    fillOpacity = 0.85,
+    label = ~sprintf(
+      "%s: %.1f PSU\n%s",
+      location,
+      salinity,
+      format(time, "%Y-%m-%d %H:%M UTC")
+    )
+  ) |>
+  addLegend(
+    position = "bottomright",
+    pal = salinity_palette,
+    values = salinity_data$salinity,
+    title = "Salinity (PSU)",
+    opacity = 0.9
+  )
+```
+
+Salinity is shown in practical salinity units (PSU, parts per thousand). Lower values (blue) indicate fresher water; higher values (red) indicate more marine conditions.

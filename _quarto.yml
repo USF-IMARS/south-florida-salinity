@@ -7,14 +7,17 @@ website:
     left:
       - href: index.qmd
         text: Home
+
+      - href: ndbc_salinity_map.qmd
+        text: NDBC Salinity Map
         
-      - text: Downstream Flows
-        menu:
-        - riverflows/riverflowSouth.qmd
-        - riverflows/riverflowEast.qmd
-        - riverflows/riverflowWest.qmd
-        - riverflows/riverflowSoutheast.qmd
-        - riverflows/riverflowSouthwest.qmd
+#      - text: Downstream Flows
+#        menu:
+#        - riverflows/riverflowSouth.qmd
+#        - riverflows/riverflowEast.qmd
+#        - riverflows/riverflowWest.qmd
+#        - riverflows/riverflowSoutheast.qmd
+#        - riverflows/riverflowSouthwest.qmd
         
       - href: https://github.com/usf-imars/south-florida-salinity
         text: Source Code on GitHub
