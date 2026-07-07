@@ -43,11 +43,15 @@ plot_salinity_field <- function(field, observations) {
   lat_max <- max(field$latitude, na.rm = TRUE)
 
   field_rast <- field_raster(field)
+  grid <- field_slice_grid(field)
+  grid$popup_label <- sprintf("%.1f PSU", grid$salinity)
 
   map <- leaflet::leaflet(
     width = "100%",
-    height = 520
+    height = 520,
+    options = leaflet::leafletOptions(preferCanvas = TRUE)
   ) |>
+    leaflet::addMapPane("fieldValues", zIndex = 620) |>
     leaflet::addProviderTiles(
       leaflet::providers$Esri.OceanBasemap,
       group = "Ocean"
@@ -65,6 +69,30 @@ plot_salinity_field <- function(field, observations) {
       colors = pal,
       opacity = 0.85,
       group = "Interpolated field"
+    ) |>
+    leaflet::addRectangles(
+      data = grid,
+      lng1 = ~lon1,
+      lat1 = ~lat1,
+      lng2 = ~lon2,
+      lat2 = ~lat2,
+      fillColor = "#000000",
+      fillOpacity = 0.001,
+      color = "#000000",
+      opacity = 0,
+      weight = 0,
+      popup = ~popup_label,
+      group = "Interpolated field",
+      options = leaflet::pathOptions(
+        pane = "fieldValues",
+        interactive = TRUE
+      ),
+      highlightOptions = leaflet::highlightOptions(
+        weight = 1,
+        color = "#333333",
+        fillOpacity = 0.15,
+        bringToFront = TRUE
+      )
     ) |>
     leaflet::addCircleMarkers(
       data = obs,
