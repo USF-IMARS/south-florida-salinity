@@ -162,7 +162,7 @@ Salinity is shown in practical salinity units (PSU, parts per thousand). Lower v
 
 ## Interpolated salinity field
 
-The field below uses **DIVAnd** (Data-Interpolating Variational Analysis) with bathymetry masking, following the same approach as [sfer-mbon-oxygen](https://github.com/usf-imars/sfer-mbon-oxygen): 0.03° horizontal grid resolution, correlation length `(0.05, 0.05)` degrees, and `epsilon2 = 1.0`. Land is masked using Natural Earth 10 m coastlines plus NOAA BlueTopo **4 m** bathymetry (8 m tiles fill gaps); cells with missing bathymetry or elevation ≥ −1 m are treated as land.
+The field below uses **DIVAnd** (Data-Interpolating Variational Analysis) with bathymetry masking, following the same approach as [sfer-mbon-oxygen](https://github.com/usf-imars/sfer-mbon-oxygen): ~0.01° horizontal grid resolution (~1 km), correlation length `(0.05, 0.05)` degrees, and `epsilon2 = 1.0`. Land is masked using Natural Earth 10 m coastlines plus NOAA BlueTopo **4 m** bathymetry (8 m tiles fill gaps); cells with missing bathymetry or elevation ≥ −1 m are treated as land.
 
 ```{r interpolate-field}
 obs_file <- file.path("data", "interpolated", "salinity_obs.csv")

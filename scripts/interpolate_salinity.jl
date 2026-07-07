@@ -8,10 +8,10 @@ using ArchGDAL
 
 const REPO_ROOT = joinpath(@__DIR__, "..")
 const BATH_ROOT = joinpath(REPO_ROOT, "data", "bathymetry")
-const HORIZ_RES_DEG = 0.03
+const HORIZ_RES_DEG = 0.01
 const MIN_GRID_POINTS = 30
-const MAX_GRID_POINTS = 100
-const MAX_GRID_POINTS_TOTAL = 10_000
+const MAX_GRID_POINTS = 150
+const MAX_GRID_POINTS_TOTAL = 50_000
 const MIN_BATHY_COVERAGE = 0.35
 const BATHY_GRID_SCALE = 3
 const MAX_BATHY_LON = 200
@@ -19,7 +19,7 @@ const MAX_BATHY_LAT = 200
 const LAND_ELEVATION_M = -1.0
 const SURFACE_DEPTH_M = 0.0
 const DEPTH_TOLERANCE_M = 2.0
-const BBOX_PADDING_DEG = 0.05
+const BBOX_PADDING_DEG = 0.02
 
 function grid_size(span, resolution, min_points, max_points)
     n = max(min_points, round(Int, span / resolution) + 1)

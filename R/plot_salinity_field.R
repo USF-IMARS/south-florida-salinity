@@ -14,6 +14,13 @@ field_slice_grid <- function(field_slice) {
   field_slice
 }
 
+field_raster <- function(field) {
+  raster::rasterFromXYZ(
+    field[, c("longitude", "latitude", "salinity")],
+    crs = "+proj=longlat +datum=WGS84"
+  )
+}
+
 plot_salinity_field <- function(field, observations) {
   if (is.null(field) || nrow(field) == 0) {
     return(NULL)
@@ -35,7 +42,7 @@ plot_salinity_field <- function(field, observations) {
   lat_min <- min(field$latitude, na.rm = TRUE)
   lat_max <- max(field$latitude, na.rm = TRUE)
 
-  grid <- field_slice_grid(field)
+  field_rast <- field_raster(field)
 
   map <- leaflet::leaflet(
     width = "100%",
@@ -53,16 +60,10 @@ plot_salinity_field <- function(field, observations) {
       leaflet::providers$OpenStreetMap,
       group = "OpenStreetMap"
     ) |>
-    leaflet::addRectangles(
-      data = grid,
-      lng1 = ~lon1,
-      lat1 = ~lat1,
-      lng2 = ~lon2,
-      lat2 = ~lat2,
-      fillColor = ~pal(salinity),
-      fillOpacity = 0.88,
-      color = NA,
-      weight = 0,
+    leaflet::addRasterImage(
+      field_rast,
+      colors = pal,
+      opacity = 0.85,
       group = "Interpolated field"
     ) |>
     leaflet::addCircleMarkers(
