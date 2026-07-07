@@ -16,6 +16,7 @@ library(knitr)
 library(leaflet)
 library(readr)
 library(scales)
+library(viridisLite)
 
 # Station list and parameters mirror ndbc_fetch_airflow_dag.py
 inwater_params <- c("sea_water_practical_salinity", "sea_water_temperature")
@@ -42,7 +43,7 @@ ndbc_stations <- list(
   list(name = "wrbf1", long_name = "Whipray_Basin")
 )
 
-# Match the DAG's 25-hour lookback window
+# 25-hour lookback window
 end_time <- format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
 start_time <- format(Sys.time() - 25 * 3600, "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
 
@@ -94,7 +95,8 @@ salinity_data <- bind_rows(lapply(ndbc_stations, fetch_latest_salinity))
 report_time <- format(Sys.time(), "%Y-%m-%d %H:%M %Z")
 ```
 
-Data are pulled from [SECOORA ERDDAP](https://erddap.secoora.org/erddap/index.html) using the same URL pattern as `ndbc_fetch_airflow_dag.py`: a 25-hour window ending at render time, with the most recent non-missing salinity value kept for each station.
+Data are pulled from [SECOORA ERDDAP](https://erddap.secoora.org/erddap/index.html):
+using a 25-hour window ending at render time, with the most recent non-missing salinity value kept for each station.
 
 **Report generated:** `r report_time`  
 **Query window:** `r start_time` to `r end_time`
@@ -157,3 +159,43 @@ leaflet(salinity_data) |>
 ```
 
 Salinity is shown in practical salinity units (PSU, parts per thousand). Lower values (blue) indicate fresher water; higher values (red) indicate more marine conditions.
+
+## Interpolated salinity field
+
+The field below uses **DIVAnd** (Data-Interpolating Variational Analysis) with bathymetry masking, following the same approach as [sfer-mbon-oxygen](https://github.com/usf-imars/sfer-mbon-oxygen): 0.03° horizontal grid resolution, correlation length `(0.05, 0.05)` degrees, and `epsilon2 = 1.0`. Land is masked using Natural Earth 10 m coastlines plus NOAA BlueTopo **4 m** bathymetry (8 m tiles fill gaps); cells with missing bathymetry or elevation ≥ −1 m are treated as land.
+
+```{r interpolate-field}
+obs_file <- file.path("data", "interpolated", "salinity_obs.csv")
+field_file <- file.path("data", "interpolated", "salinity_field.csv")
+dir.create(dirname(obs_file), recursive = TRUE, showWarnings = FALSE)
+
+salinity_data |>
+  select(longitude, latitude, salinity) |>
+  write_csv(obs_file)
+
+status <- system2(
+  "scripts/run_interpolate_salinity.sh",
+  c(obs_file, field_file),
+  stdout = FALSE,
+  stderr = FALSE
+)
+if (!identical(status, 0L)) {
+  stop("Julia interpolation failed.")
+}
+
+salinity_field <- read_csv(field_file, show_col_types = FALSE)
+source("R/plot_salinity_field.R")
+```
+
+```{r interpolated-map}
+#| fig-width: 10
+#| fig-height: 7
+
+if (nrow(salinity_field) == 0) {
+  stop("Interpolated salinity field is empty.")
+}
+
+plot_salinity_field(salinity_field, salinity_data)
+```
+
+The colored grid shows the DIVAnd-interpolated field; circle markers show the buoy observations used as input.

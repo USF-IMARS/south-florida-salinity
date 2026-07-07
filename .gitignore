@@ -50,3 +50,6 @@ rsconnect/
 
 /.quarto/
 **/*.quarto_ipynb
+
+# Interpolation outputs and bathymetry cache
+/data/
