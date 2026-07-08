@@ -159,7 +159,7 @@ Temperature is shown in degrees Celsius. Cooler values (blue) and warmer values 
 
 ## Interpolated temperature field
 
-The field below uses **DIVAnd** (Data-Interpolating Variational Analysis) with bathymetry masking, following the same approach as [sfer-mbon-oxygen](https://github.com/usf-imars/sfer-mbon-oxygen): ~0.01° horizontal grid resolution (~1 km), correlation length `(0.05, 0.05)` degrees, and `epsilon2 = 1.0`. Land is masked using Natural Earth 10 m coastlines plus NOAA BlueTopo **4 m** bathymetry (8 m tiles fill gaps); cells with missing bathymetry or elevation ≥ −1 m are treated as land.
+The field below uses **DIVAnd** (Data-Interpolating Variational Analysis) with bathymetry masking, following the same approach as [sfer-mbon-oxygen](https://github.com/usf-imars/sfer-mbon-oxygen): ~0.01° horizontal grid resolution (~1 km), correlation length `(0.05, 0.05)` degrees, and `epsilon2 = 1.0`. Land is masked using Natural Earth 10 m coastlines plus NOAA BlueTopo **4 m** bathymetry (8 m tiles fill gaps); cells with missing bathymetry or elevation ≥ −0.2 m are treated as land. Sea cells are extended along water paths (not across islands) from each buoy, up to 4 grid steps.
 
 ```{r interpolate-field}
 obs_file <- file.path("data", "interpolated", "temperature_obs.csv")
@@ -170,17 +170,20 @@ temperature_data |>
   select(longitude, latitude, temperature) |>
   write_csv(obs_file)
 
-status <- system2(
+interp_log <- system2(
   "scripts/run_interpolate_field.sh",
   c(obs_file, field_file, "ndbc_buoys"),
-  stdout = FALSE,
-  stderr = FALSE
+  stdout = TRUE,
+  stderr = TRUE
 )
-if (!identical(status, 0L)) {
-  stop("Julia interpolation failed.")
+exit_code <- attr(interp_log, "status")
+if (!is.null(exit_code) && exit_code != 0L) {
+  stop(paste("Julia interpolation failed:\n", paste(interp_log, collapse = "\n")))
 }
+cat(paste(interp_log, collapse = "\n"), "\n")
 
 temperature_field <- read_csv(field_file, show_col_types = FALSE)
+cat("Interpolated field cells:", nrow(temperature_field), "\n")
 source("R/plot_ndbc_field.R")
 ```
 

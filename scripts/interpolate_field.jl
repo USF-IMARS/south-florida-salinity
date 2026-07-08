@@ -13,10 +13,11 @@ const MIN_GRID_POINTS = 30
 const MAX_GRID_POINTS = 150
 const MAX_GRID_POINTS_TOTAL = 50_000
 const MIN_BATHY_COVERAGE = 0.35
-const BATHY_GRID_SCALE = 3
-const MAX_BATHY_LON = 200
-const MAX_BATHY_LAT = 200
-const LAND_ELEVATION_M = -1.0
+const BATHY_GRID_SCALE = 8
+const MAX_BATHY_LON = 400
+const MAX_BATHY_LAT = 400
+const OBS_SEA_MAX_STEPS = 4
+const LAND_ELEVATION_M = -0.2
 const SURFACE_DEPTH_M = 0.0
 const DEPTH_TOLERANCE_M = 2.0
 const BBOX_PADDING_DEG = 0.02
@@ -288,6 +289,118 @@ function grid_index(lon_range, lat_range, lon::Float64, lat::Float64)
     )
 end
 
+function is_water_elevation(elev::Real)
+    isfinite(elev) && elev < LAND_ELEVATION_M
+end
+
+function clear_land_mask_at_observations!(
+    land_mask::AbstractMatrix{<:Real},
+    x,
+    y,
+    lon_range,
+    lat_range,
+)
+    for (lon, lat) in zip(x, y)
+        i, j = grid_index(lon_range, lat_range, lon, lat)
+        land_mask[i, j] = 0
+    end
+    return land_mask
+end
+
+function extend_sea_mask_along_water!(
+    sea_mask::AbstractMatrix{Bool},
+    elevation::AbstractMatrix{<:Real},
+    x,
+    y,
+    lon_range,
+    lat_range,
+    max_steps::Int,
+)
+    n_lon, n_lat = size(sea_mask)
+    for (lon, lat) in zip(x, y)
+        i, j = grid_index(lon_range, lat_range, lon, lat)
+        queue = [(i, j, 0)]
+        visited = falses(n_lon, n_lat)
+
+        while !isempty(queue)
+            ci, cj, steps = popfirst!(queue)
+            if visited[ci, cj]
+                continue
+            end
+            visited[ci, cj] = true
+
+            at_obs = ci == i && cj == j
+            if at_obs || is_water_elevation(elevation[ci, cj])
+                sea_mask[ci, cj] = true
+                if steps < max_steps
+                    for (di, dj) in ((1, 0), (-1, 0), (0, 1), (0, -1))
+                        ni, nj = ci + di, cj + dj
+                        if 1 <= ni <= n_lon && 1 <= nj <= n_lat && !visited[ni, nj]
+                            push!(queue, (ni, nj, steps + 1))
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return sea_mask
+end
+
+function ensure_water_elevation_near_observations!(
+    elevation::AbstractMatrix{<:Real},
+    sea_mask::AbstractMatrix{Bool},
+)
+    for idx in eachindex(elevation)
+        if sea_mask[idx] && !isfinite(elevation[idx])
+            elevation[idx] = -2.0
+        end
+    end
+    return elevation
+end
+
+function observation_component_labels(
+    sea_mask::AbstractMatrix{Bool},
+    labels::AbstractMatrix{Int},
+    x,
+    y,
+    lon_range,
+    lat_range,
+    search_deg::Float64,
+)
+    observed_labels = Set{Int}()
+    lon_step = length(lon_range) > 1 ? abs(lon_range[2] - lon_range[1]) : search_deg
+    lat_step = length(lat_range) > 1 ? abs(lat_range[2] - lat_range[1]) : search_deg
+    radius_i = max(1, ceil(Int, search_deg / lon_step))
+    radius_j = max(1, ceil(Int, search_deg / lat_step))
+
+    for (lon, lat) in zip(x, y)
+        i, j = grid_index(lon_range, lat_range, lon, lat)
+        if sea_mask[i, j] && labels[i, j] > 0
+            push!(observed_labels, labels[i, j])
+            continue
+        end
+
+        best_label = 0
+        best_dist = Inf
+        for ii in max(1, i - radius_i):min(size(sea_mask, 1), i + radius_i)
+            for jj in max(1, j - radius_j):min(size(sea_mask, 2), j + radius_j)
+                if sea_mask[ii, jj] && labels[ii, jj] > 0
+                    dist = hypot(lon_range[ii] - lon, lat_range[jj] - lat)
+                    if dist < best_dist
+                        best_dist = dist
+                        best_label = labels[ii, jj]
+                    end
+                end
+            end
+        end
+        if best_label > 0
+            push!(observed_labels, best_label)
+        end
+    end
+
+    return observed_labels
+end
+
 function label_sea_components(sea_mask::AbstractMatrix{Bool})
     n_lon, n_lat = size(sea_mask)
     labels = zeros(Int, n_lon, n_lat)
@@ -327,31 +440,15 @@ function mask_disconnected_components!(
     lat_range,
 )
     labels = label_sea_components(sea_mask)
-    observed_labels = Set{Int}()
-
-    for (lon, lat) in zip(x, y)
-        i, j = grid_index(lon_range, lat_range, lon, lat)
-        if sea_mask[i, j]
-            push!(observed_labels, labels[i, j])
-        else
-            # Buoy may fall between cells; keep the nearest sea component.
-            best_label = 0
-            best_dist = Inf
-            for ii in max(1, i - 1):min(size(sea_mask, 1), i + 1),
-                jj in max(1, j - 1):min(size(sea_mask, 2), j + 1)
-                if sea_mask[ii, jj] && labels[ii, jj] > 0
-                    dist = hypot(lon_range[ii] - lon, lat_range[jj] - lat)
-                    if dist < best_dist
-                        best_dist = dist
-                        best_label = labels[ii, jj]
-                    end
-                end
-            end
-            if best_label > 0
-                push!(observed_labels, best_label)
-            end
-        end
-    end
+    observed_labels = observation_component_labels(
+        sea_mask,
+        labels,
+        x,
+        y,
+        lon_range,
+        lat_range,
+        0.05,
+    )
 
     if isempty(observed_labels)
         println("Warning: no observation-linked sea components found; field unchanged")
@@ -420,6 +517,7 @@ function interpolate_field(
         n_lat,
     )
     land_mask = load_land_mask(land_mask_file, n_lon, n_lat)
+    clear_land_mask_at_observations!(land_mask, x, y, lon_range, lat_range)
     apply_land_mask_to_elevation!(elevation, land_mask)
     land_cells = count(is_land_or_unknown.(elevation))
     println(
@@ -429,6 +527,9 @@ function interpolate_field(
     )
 
     sea_mask = sea_mask_at_depth(elevation, SURFACE_DEPTH_M, DEPTH_TOLERANCE_M)
+    extend_sea_mask_along_water!(sea_mask, elevation, x, y, lon_range, lat_range, OBS_SEA_MAX_STEPS)
+    ensure_water_elevation_near_observations!(elevation, sea_mask)
+    println("Extended sea mask up to $(OBS_SEA_MAX_STEPS) step(s) along water from each observation")
     len_horiz = (0.05, 0.05)
     epsilon2 = 1.0
 
