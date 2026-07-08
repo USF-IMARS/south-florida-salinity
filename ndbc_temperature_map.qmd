@@ -1,5 +1,5 @@
 ---
-title: "NDBC Salinity Map"
+title: "NDBC Temperature Map"
 subtitle: "Most recent readings from Everglades National Park buoys via SECOORA ERDDAP"
 format: html
 execute:
@@ -19,8 +19,6 @@ library(scales)
 library(viridisLite)
 
 # Station list and parameters mirror ndbc_fetch_airflow_dag.py
-inwater_params <- c("sea_water_practical_salinity", "sea_water_temperature")
-
 ndbc_stations <- list(
   list(name = "bkyf1", long_name = "Buoy_Key"),
   list(name = "bnkf1", long_name = "Butternut_Kay"),
@@ -47,8 +45,8 @@ ndbc_stations <- list(
 end_time <- format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
 start_time <- format(Sys.time() - 25 * 3600, "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
 
-fetch_latest_salinity <- function(station_info) {
-  param <- "sea_water_practical_salinity"
+fetch_latest_temperature <- function(station_info) {
+  param <- "sea_water_temperature"
   url <- sprintf(
     "https://erddap.secoora.org/erddap/tabledap/gov-nps-ever-%s.csv?time%%2Clatitude%%2Clongitude%%2C%s&time%%3E=%s&time%%3C=%s",
     station_info$name,
@@ -61,15 +59,15 @@ fetch_latest_salinity <- function(station_info) {
     req_perform()
 
   df <- read_csv(resp_body_string(resp), show_col_types = FALSE)
-  names(df) <- c("time", "latitude", "longitude", "salinity")
+  names(df) <- c("time", "latitude", "longitude", "temperature")
   df <- df[-1, ] |>
     mutate(
       time = as.POSIXct(time, format = "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"),
       latitude = as.numeric(latitude),
       longitude = as.numeric(longitude),
-      salinity = as.numeric(salinity)
+      temperature = as.numeric(temperature)
     ) |>
-    filter(!is.na(salinity))
+    filter(!is.na(temperature))
 
   if (nrow(df) == 0) {
     return(NULL)
@@ -87,32 +85,31 @@ fetch_latest_salinity <- function(station_info) {
     time = latest$time,
     latitude = latest$latitude,
     longitude = latest$longitude,
-    salinity = latest$salinity
+    temperature = latest$temperature
   )
 }
 
-salinity_data <- bind_rows(lapply(ndbc_stations, fetch_latest_salinity))
+temperature_data <- bind_rows(lapply(ndbc_stations, fetch_latest_temperature))
 report_time <- format(Sys.time(), "%Y-%m-%d %H:%M %Z")
 ```
 
-Data are pulled from [SECOORA ERDDAP](https://erddap.secoora.org/erddap/index.html):
-using a 25-hour window ending at render time, with the most recent non-missing salinity value kept for each station.
+Data are pulled from [SECOORA ERDDAP](https://erddap.secoora.org/erddap/index.html) using a 25-hour window ending at render time, with the most recent non-missing temperature value kept for each station.
 
 **Report generated:** `r report_time`  
 **Query window:** `r start_time` to `r end_time`
 
 ```{r summary}
-if (nrow(salinity_data) == 0) {
-  stop("No salinity data returned from ERDDAP for the current time window.")
+if (nrow(temperature_data) == 0) {
+  stop("No temperature data returned from ERDDAP for the current time window.")
 }
 
-salinity_data |>
+temperature_data |>
   arrange(desc(time)) |>
   mutate(
     time = format(time, "%Y-%m-%d %H:%M UTC"),
-    salinity = number(salinity, accuracy = 0.1)
+    temperature = number(temperature, accuracy = 0.1)
   ) |>
-  select(Station = station, `Station ID` = station_id, Time = time, `Salinity (PSU)` = salinity) |>
+  select(Station = station, `Station ID` = station_id, Time = time, `Temperature (°C)` = temperature) |>
   kable()
 ```
 
@@ -120,17 +117,17 @@ salinity_data |>
 #| fig-width: 10
 #| fig-height: 7
 
-salinity_palette <- colorNumeric(
-  palette = c("#2166ac", "#67a9cf", "#d1e5f0", "#fddbc7", "#ef8a62", "#b2182b"),
-  domain = salinity_data$salinity,
+temperature_palette <- colorNumeric(
+  palette = c("#313695", "#74add1", "#ffffbf", "#f46d43", "#a50026"),
+  domain = temperature_data$temperature,
   na.color = "#999999"
 )
 
-leaflet(salinity_data) |>
+leaflet(temperature_data) |>
   addProviderTiles("CartoDB.Positron") |>
   setView(
-    lng = mean(salinity_data$longitude),
-    lat = mean(salinity_data$latitude),
+    lng = mean(temperature_data$longitude),
+    lat = mean(temperature_data$latitude),
     zoom = 9
   ) |>
   addCircleMarkers(
@@ -140,37 +137,37 @@ leaflet(salinity_data) |>
     stroke = TRUE,
     weight = 1,
     color = "#333333",
-    fillColor = ~salinity_palette(salinity),
+    fillColor = ~temperature_palette(temperature),
     fillOpacity = 0.85,
     label = ~sprintf(
-      "%s: %.1f PSU\n%s",
+      "%s: %.1f °C\n%s",
       location,
-      salinity,
+      temperature,
       format(time, "%Y-%m-%d %H:%M UTC")
     )
   ) |>
   addLegend(
     position = "bottomright",
-    pal = salinity_palette,
-    values = salinity_data$salinity,
-    title = "Salinity (PSU)",
+    pal = temperature_palette,
+    values = temperature_data$temperature,
+    title = "Temperature (°C)",
     opacity = 0.9
   )
 ```
 
-Salinity is shown in practical salinity units (PSU, parts per thousand). Lower values (blue) indicate fresher water; higher values (red) indicate more marine conditions.
+Temperature is shown in degrees Celsius. Cooler values (blue) and warmer values (red) reflect spatial variation across the buoy network.
 
-## Interpolated salinity field
+## Interpolated temperature field
 
 The field below uses **DIVAnd** (Data-Interpolating Variational Analysis) with bathymetry masking, following the same approach as [sfer-mbon-oxygen](https://github.com/usf-imars/sfer-mbon-oxygen): ~0.01° horizontal grid resolution (~1 km), correlation length `(0.05, 0.05)` degrees, and `epsilon2 = 1.0`. Land is masked using Natural Earth 10 m coastlines plus NOAA BlueTopo **4 m** bathymetry (8 m tiles fill gaps); cells with missing bathymetry or elevation ≥ −1 m are treated as land.
 
 ```{r interpolate-field}
-obs_file <- file.path("data", "interpolated", "salinity_obs.csv")
-field_file <- file.path("data", "interpolated", "salinity_field.csv")
+obs_file <- file.path("data", "interpolated", "temperature_obs.csv")
+field_file <- file.path("data", "interpolated", "temperature_field.csv")
 dir.create(dirname(obs_file), recursive = TRUE, showWarnings = FALSE)
 
-salinity_data |>
-  select(longitude, latitude, salinity) |>
+temperature_data |>
+  select(longitude, latitude, temperature) |>
   write_csv(obs_file)
 
 status <- system2(
@@ -183,7 +180,7 @@ if (!identical(status, 0L)) {
   stop("Julia interpolation failed.")
 }
 
-salinity_field <- read_csv(field_file, show_col_types = FALSE)
+temperature_field <- read_csv(field_file, show_col_types = FALSE)
 source("R/plot_ndbc_field.R")
 ```
 
@@ -191,11 +188,18 @@ source("R/plot_ndbc_field.R")
 #| fig-width: 10
 #| fig-height: 7
 
-if (nrow(salinity_field) == 0) {
-  stop("Interpolated salinity field is empty.")
+if (nrow(temperature_field) == 0) {
+  stop("Interpolated temperature field is empty.")
 }
 
-plot_salinity_field(salinity_field, salinity_data)
+plot_ndbc_field(
+  temperature_field,
+  temperature_data,
+  value_col = "temperature",
+  legend_title = "Temperature (°C)",
+  popup_suffix = " °C",
+  palette = c("#313695", "#74add1", "#abd9e9", "#fee090", "#f46d43", "#a50026")
+)
 ```
 
-The colored grid shows the DIVAnd-interpolated field; circle markers show the buoy observations used as input.
+The colored field shows the DIVAnd-interpolated temperature; circle markers show the buoy observations used as input.

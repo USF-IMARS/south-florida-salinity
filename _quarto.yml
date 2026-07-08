@@ -10,6 +10,9 @@ website:
 
       - href: ndbc_salinity_map.qmd
         text: NDBC Salinity Map
+
+      - href: ndbc_temperature_map.qmd
+        text: NDBC Temperature Map
         
 #      - text: Downstream Flows
 #        menu:

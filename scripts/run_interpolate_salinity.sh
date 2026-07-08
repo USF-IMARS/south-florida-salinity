@@ -1,8 +1,3 @@
 #!/usr/bin/env bash
 set -euo pipefail
-
-# R/Quarto set LD_LIBRARY_PATH for R shared libs, which breaks Julia's OpenSSL artifacts.
-unset LD_LIBRARY_PATH
-
-repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-exec julia --project="${repo_root}/julia" "${repo_root}/scripts/interpolate_salinity.jl" "$@"
+exec "$(dirname "$0")/run_interpolate_field.sh" "$@"
