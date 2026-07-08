@@ -99,6 +99,10 @@ ul.task-list li input[type="checkbox"] {
 <span class="menu-text">NDBC Salinity Map</span></a>
   </li>  
   <li class="nav-item">
+    <a class="nav-link" href="./ndbc_temperature_map.html"> 
+<span class="menu-text">NDBC Temperature Map</span></a>
+  </li>  
+  <li class="nav-item">
     <a class="nav-link" href="https://github.com/usf-imars/south-florida-salinity"> 
 <span class="menu-text">Source Code on GitHub</span></a>
   </li>  
@@ -217,7 +221,7 @@ ul.task-list li input[type="checkbox"] {
     }
       var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
       var mailtoRegex = new RegExp(/^mailto:/);
-        var filterRegex = new RegExp('/' + window.location.host + '/');
+        var filterRegex = new RegExp("https:\/\/USF-IMARS\.github\.io\/south-florida-salinity\/");
       var isInternal = (href) => {
           return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
       }
