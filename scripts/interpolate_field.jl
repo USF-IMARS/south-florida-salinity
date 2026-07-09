@@ -23,6 +23,10 @@ const LAND_ELEVATION_M = -0.2
 const SURFACE_DEPTH_M = 0.0
 const DEPTH_TOLERANCE_M = 2.0
 const BBOX_PADDING_DEG = 0.02
+const LEN_HORIZ_DEG = 0.035
+const EPSILON2 = 0.01
+const LEN_HORIZ_BG_DEG = 0.08
+const EPSILON2_BG = 1.0
 const DEFAULT_CACHE_ID = "ndbc_buoys"
 
 function grid_size(span, resolution, min_points, max_points)
@@ -283,9 +287,12 @@ function interpolate_surface_field(
     mask, (pm, pn), (xi, yi) = DIVAnd_rectdom(lon_range, lat_range)
     mask .= sea_mask
 
-    if n_obs < 3
-        fill_value = n_obs == 0 ? NaN : mean(f)
-        fi = fill(fill_value, size(mask))
+    if n_obs == 0
+        return fill(NaN, size(sea_mask))
+    end
+
+    if n_obs == 1
+        fi = fill(f[1], size(mask))
         return ifelse.(sea_mask, fi, NaN)
     end
 
@@ -302,6 +309,208 @@ function interpolate_surface_field(
 
     fi = fi .+ f_mean
     return ifelse.(sea_mask, fi, NaN)
+end
+
+function sample_field_at_points(
+    fi::AbstractMatrix{<:Real},
+    x,
+    y,
+    lon_range,
+    lat_range,
+)
+    vals = Vector{Float64}(undef, length(x))
+    for k in eachindex(x)
+        i, j = grid_index(lon_range, lat_range, x[k], y[k])
+        vals[k] = fi[i, j]
+    end
+    return vals
+end
+
+function interpolate_surface_field_multiscale(
+    lon_range,
+    lat_range,
+    x,
+    y,
+    f,
+    len_horiz,
+    epsilon2,
+    len_horiz_bg,
+    epsilon2_bg,
+    sea_mask,
+)
+    n_obs = length(f)
+    if n_obs <= 1
+        return interpolate_surface_field(
+            lon_range,
+            lat_range,
+            x,
+            y,
+            f,
+            len_horiz,
+            epsilon2,
+            sea_mask,
+        )
+    end
+
+    background = interpolate_surface_field(
+        lon_range,
+        lat_range,
+        x,
+        y,
+        f,
+        len_horiz_bg,
+        epsilon2_bg,
+        sea_mask,
+    )
+    background_at_obs = sample_field_at_points(background, x, y, lon_range, lat_range)
+    residuals = f .- background_at_obs
+    fine = interpolate_surface_field(
+        lon_range,
+        lat_range,
+        x,
+        y,
+        residuals,
+        len_horiz,
+        epsilon2,
+        sea_mask,
+    )
+    fi = background .+ fine
+    return ifelse.(sea_mask, fi, NaN)
+end
+
+function obs_indices_for_component(
+    sea_mask::AbstractMatrix{Bool},
+    labels::AbstractMatrix{Int},
+    x,
+    y,
+    lon_range,
+    lat_range,
+    target_label::Int,
+    search_deg::Float64 = 0.05,
+)
+    indices = Int[]
+    lon_step = length(lon_range) > 1 ? abs(lon_range[2] - lon_range[1]) : search_deg
+    lat_step = length(lat_range) > 1 ? abs(lat_range[2] - lat_range[1]) : search_deg
+    radius_i = max(1, ceil(Int, search_deg / lon_step))
+    radius_j = max(1, ceil(Int, search_deg / lat_step))
+
+    for k in eachindex(x)
+        lon = x[k]
+        lat = y[k]
+        i, j = grid_index(lon_range, lat_range, lon, lat)
+        assigned = 0
+        if sea_mask[i, j] && labels[i, j] > 0
+            assigned = labels[i, j]
+        else
+            best_label = 0
+            best_dist = Inf
+            for ii in max(1, i - radius_i):min(size(sea_mask, 1), i + radius_i)
+                for jj in max(1, j - radius_j):min(size(sea_mask, 2), j + radius_j)
+                    if sea_mask[ii, jj] && labels[ii, jj] > 0
+                        dist = hypot(lon_range[ii] - lon, lat_range[jj] - lat)
+                        if dist < best_dist
+                            best_dist = dist
+                            best_label = labels[ii, jj]
+                        end
+                    end
+                end
+            end
+            assigned = best_label
+        end
+        if assigned == target_label
+            push!(indices, k)
+        end
+    end
+
+    return indices
+end
+
+function interpolate_by_sea_component(
+    lon_range,
+    lat_range,
+    x,
+    y,
+    f,
+    len_horiz,
+    epsilon2,
+    sea_mask::AbstractMatrix{Bool},
+)
+    labels = label_sea_components(sea_mask)
+    observed_labels = observation_component_labels(
+        sea_mask,
+        labels,
+        x,
+        y,
+        lon_range,
+        lat_range,
+        0.05,
+    )
+    fi = fill(NaN, size(sea_mask))
+
+    for target_label in observed_labels
+        component_mask = sea_mask .& (labels .== target_label)
+        obs_idx = obs_indices_for_component(
+            sea_mask,
+            labels,
+            x,
+            y,
+            lon_range,
+            lat_range,
+            target_label,
+        )
+        isempty(obs_idx) && continue
+
+        fi_comp = interpolate_surface_field_multiscale(
+            lon_range,
+            lat_range,
+            x[obs_idx],
+            y[obs_idx],
+            f[obs_idx],
+            len_horiz,
+            epsilon2,
+            (LEN_HORIZ_BG_DEG, LEN_HORIZ_BG_DEG),
+            EPSILON2_BG,
+            component_mask,
+        )
+
+        for idx in eachindex(fi)
+            if component_mask[idx]
+                fi[idx] = fi_comp[idx]
+            end
+        end
+    end
+
+    return fi
+end
+
+function report_observation_fit(
+    fi::AbstractMatrix{<:Real},
+    x,
+    y,
+    f,
+    lon_range,
+    lat_range,
+)
+    residuals = Float64[]
+    for (lon, lat, obs_val) in zip(x, y, f)
+        i, j = grid_index(lon_range, lat_range, lon, lat)
+        field_val = fi[i, j]
+        if !isnan(field_val)
+            push!(residuals, obs_val - field_val)
+        end
+    end
+
+    if isempty(residuals)
+        println("Observation fit: no buoy grid cells overlap the interpolated field")
+        return
+    end
+
+    println(
+        "Observation fit at buoy grid cells: ",
+        "mean |residual|=$(round(mean(abs.(residuals)), digits=2)), ",
+        "max |residual|=$(round(maximum(abs.(residuals)), digits=2)), ",
+        "RMSE=$(round(sqrt(mean(residuals .^ 2)), digits=2))",
+    )
 end
 
 function grid_index(lon_range, lat_range, lon::Float64, lat::Float64)
@@ -875,10 +1084,15 @@ function interpolate_field(
     )
     ensure_water_elevation_near_observations!(elevation, sea_mask)
     println("Extended sea mask up to $(OBS_SEA_MAX_STEPS) step(s) along water from each observation")
-    len_horiz = (0.05, 0.05)
-    epsilon2 = 1.0
+    len_horiz = (LEN_HORIZ_DEG, LEN_HORIZ_DEG)
+    epsilon2 = EPSILON2
+    println(
+        "DIVAnd parameters: fine len_horiz=$(len_horiz), epsilon2=$(epsilon2); ",
+        "background len_horiz=($(LEN_HORIZ_BG_DEG), $(LEN_HORIZ_BG_DEG)), epsilon2=$(EPSILON2_BG) ",
+        "(per sea component)",
+    )
 
-    fi = interpolate_surface_field(
+    fi = interpolate_by_sea_component(
         lon_range,
         lat_range,
         x,
@@ -888,6 +1102,7 @@ function interpolate_field(
         epsilon2,
         sea_mask,
     )
+    report_observation_fit(fi, x, y, f, lon_range, lat_range)
     mask_disconnected_components!(fi, sea_mask, x, y, lon_range, lat_range)
 
     grid_lons = Float64[]
