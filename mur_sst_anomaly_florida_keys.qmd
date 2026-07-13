@@ -37,7 +37,7 @@ mur_image_url <- function(time_iso) {
       "%s.smallPng?sstAnom[(%s)][(%.1f):(%.1f)][(%.1f):(%.1f)]",
       "&.draw=surface",
       "&.vars=longitude|latitude|sstAnom",
-      "&.colorBar=|RedBlue| | |-3|3|",
+      "&.colorBar=|||||",
       "&.land=over"
     ),
     erddap_base,
@@ -185,7 +185,7 @@ htmltools::tagList(mur_image_animator(latest_times))
 
 **Map extent:** `r lat_min`°N to `r lat_max`°N, `r lon_min`°W to `r lon_max`°W.
 
-**Color scale:** SST anomaly (`sstAnom`) from −3°C to +3°C (blue = cooler than climatology, red = warmer).
+**Color scale:** SST anomaly (`sstAnom`) using the dataset default BlueWhiteRed palette from −3°C to +3°C (blue = cooler than climatology, red = warmer).
 
 **Most recent analysis time in ERDDAP:** `r format_time_label(latest_time)`.
 
@@ -220,7 +220,7 @@ https://coastwatch.pfeg.noaa.gov/erddap/griddap/jplMURSST41anom1day.smallPng
   ?sstAnom[(TIME)][(24.3):(26.5)][(-83.0):(-79.5)]
   &.draw=surface
   &.vars=longitude|latitude|sstAnom
-  &.colorBar=|RedBlue| | |-3|3|
+  &.colorBar=|||||
   &.land=over
 ```
 
