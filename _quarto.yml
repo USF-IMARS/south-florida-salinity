@@ -13,6 +13,9 @@ website:
 
       - href: ndbc_temperature_map.qmd
         text: NDBC Temperature Map
+
+      - href: mur_sst_anomaly_florida_keys.qmd
+        text: MUR SST Anomaly
         
 #      - text: Downstream Flows
 #        menu:

@@ -1,0 +1,235 @@
+---
+title: "MUR SST Anomaly — Florida Keys"
+subtitle: "Daily sea surface temperature anomalies from NOAA CoastWatch ERDDAP"
+format: html
+execute:
+  echo: true
+  warning: false
+  message: false
+---
+
+```{r setup}
+library(httr2)
+library(htmltools)
+library(jsonlite)
+
+erddap_base <- "https://coastwatch.pfeg.noaa.gov/erddap/griddap/jplMURSST41anom1day"
+dataset_id <- "jplMURSST41anom1day"
+n_days <- 5
+
+# Florida Keys and adjacent South Florida shelf
+lat_min <- 24.3
+lat_max <- 26.5
+lon_min <- -83.0
+lon_max <- -79.5
+
+fetch_times <- function() {
+  resp <- request(paste0(erddap_base, ".json?time")) |>
+    req_perform()
+
+  rows <- resp_body_json(resp)$table$rows
+  vapply(rows, function(row) row[[1]], character(1))
+}
+
+mur_image_url <- function(time_iso) {
+  sprintf(
+    paste0(
+      "%s.smallPng?sstAnom[(%s)][(%.1f):(%.1f)][(%.1f):(%.1f)]",
+      "&.draw=surface",
+      "&.vars=longitude|latitude|sstAnom",
+      "&.colorBar=|RedBlue| | |-3|3|",
+      "&.land=over"
+    ),
+    erddap_base,
+    time_iso,
+    lat_min,
+    lat_max,
+    lon_min,
+    lon_max
+  )
+}
+
+format_time_label <- function(time_iso) {
+  format(
+    as.POSIXct(time_iso, format = "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"),
+    "%Y-%m-%d UTC"
+  )
+}
+
+mur_image_row <- function(times) {
+  tags$div(
+    class = "mur-sst-row",
+    lapply(times, function(time_iso) {
+      tags$div(
+        class = "mur-sst-panel",
+        tags$img(
+          src = mur_image_url(time_iso),
+          alt = paste("SST anomaly on", format_time_label(time_iso))
+        ),
+        tags$p(format_time_label(time_iso))
+      )
+    })
+  )
+}
+
+mur_image_animator <- function(times, interval_ms = 900) {
+  frame_urls <- vapply(times, mur_image_url, character(1))
+  frame_labels <- vapply(times, format_time_label, character(1))
+  widget_id <- "mur-sst-anim"
+
+  tags$div(
+    class = "mur-sst-anim",
+    id = widget_id,
+    `data-frame-urls` = as.character(jsonlite::toJSON(frame_urls, auto_unbox = TRUE)),
+    `data-frame-labels` = as.character(jsonlite::toJSON(frame_labels, auto_unbox = TRUE)),
+    `data-interval-ms` = interval_ms,
+    tags$div(
+      class = "mur-sst-anim-frame",
+      tags$img(
+        id = paste0(widget_id, "-img"),
+        src = frame_urls[[1]],
+        alt = paste("SST anomaly animation starting", frame_labels[[1]])
+      )
+    ),
+    tags$div(
+      class = "mur-sst-anim-controls",
+      tags$button("Prev", type = "button", class = "btn btn-default mur-sst-prev"),
+      tags$button("Pause", type = "button", class = "btn btn-primary mur-sst-toggle"),
+      tags$button("Next", type = "button", class = "btn btn-default mur-sst-next"),
+      tags$span(
+        class = "mur-sst-anim-label",
+        id = paste0(widget_id, "-label"),
+        frame_labels[[1]]
+      )
+    ),
+    tags$script(HTML("
+(function() {
+  function initMurSstAnim(root) {
+    if (!root || root.dataset.murSstInit === 'true') return;
+    root.dataset.murSstInit = 'true';
+
+    const urls = JSON.parse(root.dataset.frameUrls);
+    const labels = JSON.parse(root.dataset.frameLabels);
+    const intervalMs = Number(root.dataset.intervalMs || 900);
+    const img = root.querySelector('img');
+    const label = root.querySelector('.mur-sst-anim-label');
+    const toggleBtn = root.querySelector('.mur-sst-toggle');
+    const prevBtn = root.querySelector('.mur-sst-prev');
+    const nextBtn = root.querySelector('.mur-sst-next');
+
+    let index = 0;
+    let playing = true;
+    let timer = null;
+
+    function showFrame(nextIndex) {
+      index = (nextIndex + urls.length) % urls.length;
+      img.src = urls[index];
+      img.alt = 'SST anomaly on ' + labels[index];
+      label.textContent = labels[index];
+    }
+
+    function setPlaying(state) {
+      playing = state;
+      toggleBtn.textContent = playing ? 'Pause' : 'Play';
+      if (playing) {
+        timer = window.setInterval(function() {
+          showFrame(index + 1);
+        }, intervalMs);
+      } else if (timer !== null) {
+        window.clearInterval(timer);
+        timer = null;
+      }
+    }
+
+    toggleBtn.addEventListener('click', function() {
+      setPlaying(!playing);
+    });
+    prevBtn.addEventListener('click', function() {
+      showFrame(index - 1);
+    });
+    nextBtn.addEventListener('click', function() {
+      showFrame(index + 1);
+    });
+
+    setPlaying(true);
+  }
+
+  document.querySelectorAll('.mur-sst-anim').forEach(initMurSstAnim);
+})();
+"))
+  )
+}
+
+available_times <- fetch_times()
+latest_times <- tail(available_times, n_days)
+latest_time <- tail(available_times, 1)
+```
+
+## Latest daily maps
+
+The row below shows the most recent `r n_days` daily SST anomaly maps for the Florida Keys region
+(`r lat_min`°–`r lat_max`°N, `r lon_min`°–`r lon_max`°E), pulled directly from
+[ERDDAP `r dataset_id`](`r erddap_base`.graph).
+
+```{r image-row, results='asis'}
+htmltools::tagList(mur_image_row(latest_times))
+```
+
+## Animation
+
+Use the controls to pause auto-play or step backward and forward through the same daily maps.
+
+```{r image-animation, results='asis'}
+htmltools::tagList(mur_image_animator(latest_times))
+```
+
+**Map extent:** `r lat_min`°N to `r lat_max`°N, `r lon_min`°W to `r lon_max`°W.
+
+**Color scale:** SST anomaly (`sstAnom`) from −3°C to +3°C (blue = cooler than climatology, red = warmer).
+
+**Most recent analysis time in ERDDAP:** `r format_time_label(latest_time)`.
+
+## Dataset details
+
+| | |
+|---|---|
+| **Title** | Multi-scale Ultra-high Resolution (MUR) SST Analysis Anomaly fv04.1, Global, 0.01°, 2002–present, Daily |
+| **Dataset ID** | [`jplMURSST41anom1day`](https://coastwatch.pfeg.noaa.gov/erddap/griddap/jplMURSST41anom1day.html) |
+| **Institution** | NOAA NMFS SWFSC ERD and NOAA NESDIS CoastWatch WCRN |
+| **Source product** | [JPL MUR L4 GHRSST v4.1](https://podaac.jpl.nasa.gov/dataset/MUR-JPL-L4-GLOB-v4.1) foundation SST |
+| **Variable** | `sstAnom` — sea surface foundation temperature anomaly (°C) |
+| **Climatology** | JPL daily MUR SST climatology, 2003–2014 |
+| **Spatial resolution** | 0.01° (~1 km) |
+| **Temporal resolution** | Daily (analysis time 09:00 UTC) |
+| **Coverage** | Global, 2002-06-01 to present |
+| **Platforms / sensors** | Aqua, Terra, Suomi-NPP, DMSP, NOAA-POES; AMSR-E, MODIS, VIIRS, AVHRR, SSM/I, in-situ |
+| **License** | Free to use and redistribute; not intended for legal use ([full disclaimer](https://coastwatch.pfeg.noaa.gov/erddap/griddap/jplMURSST41anom1day.html)) |
+
+### How the anomaly is computed
+
+ERDDAP subtracts the JPL MUR 2003–2014 daily climatology from each day's foundation SST analysis.
+For leap years, day-of-year 366 uses the day 365 climatology value.
+The most recent four days are typically revised each day; older days may also be updated.
+
+### ERDDAP image URL pattern
+
+Each panel above is generated with a `griddap` PNG request of the form:
+
+```text
+https://coastwatch.pfeg.noaa.gov/erddap/griddap/jplMURSST41anom1day.smallPng
+  ?sstAnom[(TIME)][(24.3):(26.5)][(-83.0):(-79.5)]
+  &.draw=surface
+  &.vars=longitude|latitude|sstAnom
+  &.colorBar=|RedBlue| | |-3|3|
+  &.land=over
+```
+
+Use the [Make A Graph](https://coastwatch.pfeg.noaa.gov/erddap/griddap/jplMURSST41anom1day.graph) or
+[Data Access Form](https://coastwatch.pfeg.noaa.gov/erddap/griddap/jplMURSST41anom1day.html) pages to
+explore other extents, color bars, or file formats.
+
+### Related links
+
+- [Dataset metadata](https://coastwatch.pfeg.noaa.gov/erddap/info/jplMURSST41anom1day/index.html)
+- [PO.DAAC background](https://podaac.jpl.nasa.gov/dataset/MUR-JPL-L4-GLOB-v4.1)
+- [ERDDAP griddap documentation](https://coastwatch.pfeg.noaa.gov/erddap/griddap/documentation.html)

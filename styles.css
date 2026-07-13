@@ -1,1 +1,60 @@
 /* css styles */
+
+.mur-sst-row {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 14px;
+  align-items: start;
+}
+
+.mur-sst-panel {
+  text-align: center;
+  min-width: 0;
+}
+
+.mur-sst-panel img,
+.mur-sst-anim-frame img {
+  width: 100%;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}
+
+.mur-sst-panel p {
+  font-size: 0.85em;
+  margin: 6px 0 0;
+}
+
+.mur-sst-anim {
+  max-width: 520px;
+  margin: 0 auto;
+}
+
+.mur-sst-anim-frame {
+  text-align: center;
+}
+
+.mur-sst-anim-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  align-items: center;
+  margin-top: 12px;
+}
+
+.mur-sst-anim-controls button {
+  min-width: 4.5rem;
+}
+
+.mur-sst-anim-label {
+  font-size: 0.9em;
+  min-width: 8rem;
+  text-align: center;
+}
+
+@media (max-width: 1100px) {
+  .mur-sst-row {
+    grid-template-columns: repeat(5, minmax(120px, 1fr));
+    overflow-x: auto;
+  }
+}
