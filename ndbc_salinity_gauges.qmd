@@ -1,0 +1,144 @@
+---
+title: "NDBC Salinity Gauges"
+subtitle: "Latest buoy salinity with low / normal / high thresholds"
+format: html
+execute:
+  echo: true
+  warning: false
+  message: false
+---
+
+```{r setup}
+library(dplyr)
+library(httr2)
+library(htmltools)
+library(readr)
+library(scales)
+
+source("R/plot_salinity_gauges.R")
+
+ndbc_stations <- list(
+  list(name = "bkyf1", long_name = "Buoy_Key"),
+  list(name = "bnkf1", long_name = "Butternut_Kay"),
+  list(name = "bobf1", long_name = "Bob_Allen_Key"),
+  list(name = "bwsf1", long_name = "Blackwater_Sound"),
+  list(name = "dkkf1", long_name = "Duck_Key"),
+  list(name = "gbtf1", long_name = "Garfield_Bight"),
+  list(name = "hcef1", long_name = "Highway_Creek"),
+  list(name = "jbyf1", long_name = "Joe_Bay"),
+  list(name = "jkyf1", long_name = "Johnson_Key"),
+  list(name = "lbsf1", long_name = "Little_Blackwater_Sound"),
+  list(name = "lmdf1", long_name = "Little_Madeira_Bay"),
+  list(name = "lrkf1", long_name = "Little_Rabbit_Key"),
+  list(name = "lsnf1", long_name = "Long_Sound"),
+  list(name = "mdkf1", long_name = "Middle_Key"),
+  list(name = "mukf1", long_name = "Murray_Key"),
+  list(name = "pkyf1", long_name = "Peterson_Key"),
+  list(name = "tbyf1", long_name = "Terrapin_Bay"),
+  list(name = "thrf1", long_name = "Thursday_Point"),
+  list(name = "wrbf1", long_name = "Whipray_Basin")
+)
+
+end_time <- format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
+start_time <- format(Sys.time() - 25 * 3600, "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
+
+fetch_latest_salinity <- function(station_info) {
+  param <- "sea_water_practical_salinity"
+  url <- sprintf(
+    "https://erddap.secoora.org/erddap/tabledap/gov-nps-ever-%s.csv?time%%2Clatitude%%2Clongitude%%2C%s&time%%3E=%s&time%%3C=%s",
+    station_info$name,
+    param,
+    start_time,
+    end_time
+  )
+
+  resp <- request(url) |>
+    req_perform()
+
+  df <- read_csv(resp_body_string(resp), show_col_types = FALSE)
+  names(df) <- c("time", "latitude", "longitude", "salinity")
+  df <- df[-1, ] |>
+    mutate(
+      time = as.POSIXct(time, format = "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"),
+      latitude = as.numeric(latitude),
+      longitude = as.numeric(longitude),
+      salinity = as.numeric(salinity)
+    ) |>
+    filter(!is.na(salinity))
+
+  if (nrow(df) == 0) {
+    return(tibble(
+      station_id = station_info$name,
+      station = station_info$long_name,
+      location = sprintf(
+        "%s (%s)",
+        station_info$long_name,
+        sub("f1$", "", station_info$name)
+      ),
+      time = as.POSIXct(NA, origin = "1970-01-01", tz = "UTC"),
+      latitude = NA_real_,
+      longitude = NA_real_,
+      salinity = NA_real_
+    ))
+  }
+
+  latest <- df[which.max(df$time), ]
+  tibble(
+    station_id = station_info$name,
+    station = station_info$long_name,
+    location = sprintf(
+      "%s (%s)",
+      station_info$long_name,
+      sub("f1$", "", station_info$name)
+    ),
+    time = latest$time,
+    latitude = latest$latitude,
+    longitude = latest$longitude,
+    salinity = latest$salinity
+  )
+}
+
+salinity_data <- bind_rows(lapply(ndbc_stations, fetch_latest_salinity)) |>
+  arrange(station)
+
+report_time <- format(Sys.time(), "%Y-%m-%d %H:%M %Z")
+n_low <- sum(salinity_data$salinity < SALINITY_LOW_THRESHOLD, na.rm = TRUE)
+n_high <- sum(salinity_data$salinity > SALINITY_HIGH_THRESHOLD, na.rm = TRUE)
+n_normal <- sum(
+  !is.na(salinity_data$salinity) &
+    salinity_data$salinity >= SALINITY_LOW_THRESHOLD &
+    salinity_data$salinity <= SALINITY_HIGH_THRESHOLD
+)
+n_missing <- sum(is.na(salinity_data$salinity))
+```
+
+Data are pulled from [SECOORA ERDDAP](https://erddap.secoora.org/erddap/index.html) using the same 25-hour window as the salinity map. Each gauge shows the latest non-missing reading for an Everglades National Park buoy.
+
+**Report generated:** `r report_time`  
+**Query window:** `r start_time` to `r end_time`
+
+## Thresholds
+
+Gauges use practical salinity units (PSU) on a `r SALINITY_GAUGE_MIN`–`r SALINITY_GAUGE_MAX` scale suited to Florida Bay and the Keys:
+
+```{r legend, results='asis'}
+htmltools::tagList(salinity_gauge_legend())
+```
+
+- **Low** (`< `r SALINITY_LOW_THRESHOLD` PSU): fresher conditions, stronger freshwater or runoff influence
+- **Normal** (`r SALINITY_LOW_THRESHOLD`–`r SALINITY_HIGH_THRESHOLD` PSU): typical estuarine range for the region
+- **High** (`> `r SALINITY_HIGH_THRESHOLD` PSU): more marine or hypersaline conditions
+
+**Current summary:** `r n_low` low, `r n_normal` normal, `r n_high` high, `r n_missing` missing.
+
+## Station gauges
+
+```{r gauges, results='asis'}
+if (all(is.na(salinity_data$salinity))) {
+  stop("No salinity data returned from ERDDAP for the current time window.")
+}
+
+htmltools::tagList(plot_salinity_gauges(salinity_data))
+```
+
+Thresholds are intended for quick situational awareness across stations. They are not regulatory standards and can be adjusted in `R/plot_salinity_gauges.R` if monitoring goals change.

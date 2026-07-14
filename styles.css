@@ -58,3 +58,168 @@
     overflow-x: auto;
   }
 }
+
+.salinity-gauge-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 16px;
+  margin: 1.5rem 0;
+}
+
+.salinity-gauge-card {
+  border: 1px solid #d9d9d9;
+  border-radius: 8px;
+  padding: 12px 14px 14px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.salinity-gauge-title {
+  font-weight: 600;
+  font-size: 0.95rem;
+  line-height: 1.2;
+}
+
+.salinity-gauge-subtitle {
+  color: #666;
+  font-size: 0.78rem;
+  margin-bottom: 10px;
+}
+
+.salinity-gauge-track {
+  position: relative;
+  height: 18px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: #eee;
+}
+
+.salinity-gauge-zone {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+}
+
+.salinity-gauge-zone-low {
+  left: 0;
+  width: var(--low-end);
+  background: #67a9cf;
+}
+
+.salinity-gauge-zone-normal {
+  left: var(--low-end);
+  width: calc(var(--high-start) - var(--low-end));
+  background: #8fd19e;
+}
+
+.salinity-gauge-zone-high {
+  left: var(--high-start);
+  right: 0;
+  background: #ef8a62;
+}
+
+.salinity-gauge-threshold {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 2px;
+  background: rgba(0, 0, 0, 0.35);
+  transform: translateX(-1px);
+}
+
+.salinity-gauge-threshold-low {
+  left: var(--low-end);
+}
+
+.salinity-gauge-threshold-high {
+  left: var(--high-start);
+}
+
+.salinity-gauge-marker {
+  position: absolute;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  margin-left: -7px;
+  margin-top: -7px;
+  border-radius: 50%;
+  border: 2px solid #222;
+  background: #fff;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.8);
+  z-index: 2;
+}
+
+.salinity-gauge-marker-missing {
+  left: 50%;
+  background: #bbb;
+}
+
+.salinity-gauge-scale {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.72rem;
+  color: #666;
+  margin-top: 4px;
+}
+
+.salinity-gauge-value {
+  font-size: 1.35rem;
+  font-weight: 700;
+  margin-top: 8px;
+}
+
+.salinity-gauge-status {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.salinity-gauge-status-low {
+  background: #d1e5f0;
+  color: #2166ac;
+}
+
+.salinity-gauge-status-normal {
+  background: #e7f4ea;
+  color: #2d6a3d;
+}
+
+.salinity-gauge-status-high {
+  background: #fde0d5;
+  color: #b2182b;
+}
+
+.salinity-gauge-status-missing {
+  background: #eee;
+  color: #666;
+}
+
+.salinity-gauge-time {
+  margin-top: 6px;
+  font-size: 0.72rem;
+  color: #777;
+}
+
+.salinity-gauge-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 20px;
+  margin: 0.75rem 0 0;
+}
+
+.salinity-gauge-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+}
+
+.salinity-gauge-legend-swatch {
+  display: inline-block;
+  width: 28px;
+  height: 12px;
+  border-radius: 999px;
+}

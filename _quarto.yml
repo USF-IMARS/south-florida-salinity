@@ -11,6 +11,9 @@ website:
       - href: ndbc_salinity_map.qmd
         text: NDBC Salinity Map
 
+      - href: ndbc_salinity_gauges.qmd
+        text: Salinity Gauges
+
       - href: ndbc_temperature_map.qmd
         text: NDBC Temperature Map
 
