@@ -1,0 +1,90 @@
+---
+title: "NDBC Salinity Time Series"
+subtitle: "Per-buoy salinity from the USF MBON Grafana dashboard"
+format: html
+execute:
+  echo: true
+  warning: false
+  message: false
+---
+
+```{r setup}
+library(dplyr)
+library(ggplot2)
+library(htmltools)
+library(httr2)
+
+source("R/plot_grafana_salinity_ts.R")
+
+ndbc_stations <- list(
+  list(name = "bkyf1", long_name = "Buoy_Key"),
+  list(name = "bnkf1", long_name = "Butternut_Kay"),
+  list(name = "bobf1", long_name = "Bob_Allen_Key"),
+  list(name = "bwsf1", long_name = "Blackwater_Sound"),
+  list(name = "dkkf1", long_name = "Duck_Key"),
+  list(name = "gbtf1", long_name = "Garfield_Bight"),
+  list(name = "hcef1", long_name = "Highway_Creek"),
+  list(name = "jbyf1", long_name = "Joe_Bay"),
+  list(name = "jkyf1", long_name = "Johnson_Key"),
+  list(name = "lbsf1", long_name = "Little_Blackwater_Sound"),
+  list(name = "lmdf1", long_name = "Little_Madeira_Bay"),
+  list(name = "lrkf1", long_name = "Little_Rabbit_Key"),
+  list(name = "lsnf1", long_name = "Long_Sound"),
+  list(name = "mdkf1", long_name = "Middle_Key"),
+  list(name = "mukf1", long_name = "Murray_Key"),
+  list(name = "pkyf1", long_name = "Peterson_Key"),
+  list(name = "tbyf1", long_name = "Terrapin_Bay"),
+  list(name = "thrf1", long_name = "Thursday_Point"),
+  list(name = "wrbf1", long_name = "Whipray_Basin")
+)
+
+from_ms <- GRAFANA_DEFAULT_FROM
+to_ms <- GRAFANA_DEFAULT_TO
+
+salinity_ts <- fetch_grafana_salinity_timeseries(
+  from = from_ms,
+  to = to_ms
+)
+
+report_time <- format(Sys.time(), "%Y-%m-%d %H:%M %Z")
+range_start <- format(
+  as.POSIXct(as.numeric(from_ms) / 1000, origin = "1970-01-01", tz = "UTC"),
+  "%Y-%m-%d"
+)
+range_end <- format(
+  as.POSIXct(as.numeric(to_ms) / 1000, origin = "1970-01-01", tz = "UTC"),
+  "%Y-%m-%d"
+)
+```
+
+Each panel below matches **Grafana panel 33** (*In-situ salinity (psu) at ~1m depth from $Buoy*) on the [USF MBON South Florida Salinity dashboard](`r grafana_dashboard_url(from_ms, to_ms)`). Time series are queried from the dashboard's InfluxDB datasource via the Grafana `/api/ds/query` endpoint, using the same query and time range as the dashboard link you provided.
+
+**Report generated:** `r report_time`  
+**Time range:** `r range_start` to `r range_end` UTC  
+**Stations plotted:** `r length(unique(salinity_ts$location))`
+
+Dashed lines mark the same low (`r 25` PSU) and high (`r 35` PSU) thresholds used on the [Salinity Gauges](ndbc_salinity_gauges.qmd) page.
+
+## Buoy panels
+
+```{r buoy-panels, fig.width=9, fig.height=3.2, results='asis'}
+if (nrow(salinity_ts) == 0) {
+  stop("No salinity time series returned from the Grafana datasource.")
+}
+
+htmltools::tagList(
+  plot_grafana_salinity_panels(
+    ndbc_stations,
+    salinity_ts,
+    from = from_ms,
+    to = to_ms
+  )
+)
+```
+
+## Grafana links
+
+- [Full South Florida Salinity dashboard](`r grafana_dashboard_url(from_ms, to_ms)`)
+- Panel ID: `r GRAFANA_SALINITY_PANEL_ID` on dashboard `r GRAFANA_DASHBOARD_UID`
+
+Grafana solo-panel iframes are not embedded here because the MBON server sets `X-Frame-Options: deny` and does not expose the image renderer plugin. Use the **Open Grafana panel** link on any chart to view the live Grafana panel for that buoy.

@@ -14,6 +14,9 @@ website:
       - href: ndbc_salinity_gauges.qmd
         text: Salinity Gauges
 
+      - href: ndbc_salinity_timeseries.qmd
+        text: Salinity Time Series
+
       - href: ndbc_temperature_map.qmd
         text: NDBC Temperature Map
 
